@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>送给莹宝的2026专属浪漫</title>
+  <style>
+    body { margin: 0; background-color: #000; overflow: hidden; font-family: "Microsoft YaHei", sans-serif; }
+    #input_video { display: none; }
+    #overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(circle, #2c0211 0%, #000000 100%);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 100; color: white; cursor: pointer; transition: opacity 1s;
+    }
+    h1 { font-size: 3.5rem; margin-bottom: 20px; text-shadow: 0 0 30px #ff4d6d; letter-spacing: 8px; font-weight: bold; }
+    p { font-size: 1.2rem; opacity: 0.8; }
+    #greetings {
+      position: fixed; top: 8%; width: 100%; text-align: center;
+      color: white; font-size: 3rem; pointer-events: none; z-index: 10;
+      text-shadow: 0 0 25px rgba(255, 77, 109, 1);
+      animation: breathe 4s infinite ease-in-out;
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: 0.3; transform: scale(0.95); filter: blur(2px); }
+      50% { opacity: 1; transform: scale(1.05); filter: blur(0px); }
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay" onclick="startExperience()">
+    <h1>✨ 2026 莹宝专属 ✨</h1>
+    <p>点击开启 这一刻的浪漫</p>
+    <p style="font-size: 0.9rem; margin-top: 20px;"></p>
+  </div>
+
+  <div id="greetings">2026 新年快乐，我爱莹宝 ❤️</div>
+  <video id="input_video"></video>
+  
+  <audio id="bgm" loop src="qingning.mp3"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.4.2/lib/p5.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <script>
+    let videoElement, detectedHand = null, fireworks = [];
+    let isStarted = false, maxParticles = 1200;
+    let lastX = 0, lastY = 0, isFirstPoint = true;
+
+    function startExperience() {
+      document.getElementById('overlay').style.opacity = '0';
+      setTimeout(() => { document.getElementById('overlay').style.display = 'none'; }, 1000);
+      document.getElementById('bgm').play().catch(e => console.log("音频播放受阻，请手动点击。"));
+      isStarted = true;
+    }
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      colorMode(HSB, 360, 255, 255, 255);
+      background(0);
+      videoElement = document.getElementById('input_video');
+      startMediaPipe();
+    }
+
+    function draw() {
+      if (!isStarted) return;
+      
+      blendMode(BLEND);
+      background(0, 0, 0, 35); // 保持优雅的拖尾
+
+      if (detectedHand && detectedHand.multiHandLandmarks.length > 0) {
+        let landmarks = detectedHand.multiHandLandmarks[0];
+        let curX = (1.0 - landmarks[8].x) * width;
+        let curY = landmarks[8].y * height;
+        let thumbX = (1.0 - landmarks[4].x) * width;
+        let thumbY = landmarks[4].y * height;
+
+        if (isFirstPoint) { lastX = curX; lastY = curY; isFirstPoint = false; }
+
+        let palmSize = dist((1.0 - landmarks[0].x) * width, landmarks[0].y * height, 
+                            (1.0 - landmarks[5].x) * width, landmarks[5].y * height);
+        let fingerDist = dist(curX, curY, thumbX, thumbY);
+        let isPinching = fingerDist < palmSize * 0.45;
+
+        // 轨迹补全逻辑
+        let moveDist = dist(lastX, lastY, curX, curY);
+        let stepLimit = 12; 
+
+        if (isPinching) {
+          if (frameCount % 6 === 0) createHeartExplosion(curX, curY);
+        } else {
+          if (moveDist > stepLimit) {
+            let steps = floor(moveDist / stepLimit);
+            for (let i = 1; i <= steps; i++) {
+              let interX = lerp(lastX, curX, i / steps);
+              let interY = lerp(lastY, curY, i / steps);
+              createNormalSpark(interX, interY, 3);
+            }
+          } else if (frameCount % 3 === 0) {
+            createNormalSpark(curX, curY, 12);
+          }
+        }
+
+        drawLeadingPoint(curX, curY, isPinching);
+        lastX = curX; lastY = curY;
+      } else { isFirstPoint = true; }
+
+      blendMode(ADD); 
+      for (let i = fireworks.length - 1; i >= 0; i--) {
+        fireworks[i].update();
+        fireworks[i].display();
+        if (fireworks[i].isDead()) fireworks.splice(i, 1);
+      }
+      if (fireworks.length > maxParticles) fireworks.splice(0, 20);
+    }
+
+    function drawLeadingPoint(x, y, active) {
+      push();
+      blendMode(ADD);
+      drawingContext.shadowBlur = active ? 40 : 15;
+      drawingContext.shadowColor = active ? '#ff4d6d' : '#ffffff';
+      fill(active ? color(350, 150, 255) : 255);
+      ellipse(x, y, active ? 15 : 8);
+      pop();
+    }
+
+    class Particle {
+      constructor(x, y, hue, vel, gravity, friction) {
+        this.pos = createVector(x, y);
+        this.vel = vel;
+        this.acc = createVector(0, gravity);
+        this.hue = hue;
+        this.lifespan = 255;
+        this.friction = friction;
+        this.size = random(2, 5);
+      }
+      update() {
+        this.vel.mult(this.friction);
+        this.vel.add(this.acc);
+        this.pos.add(this.vel);
+        this.lifespan -= 4.5;
+      }
+      display() {
+        if (this.lifespan < 0) return;
+        push();
+        let pRatio = this.lifespan / 255;
+        let s = map(pRatio, 1, 0, 50, 255);
+        let b = map(pRatio, 1, 0, 255, 100);
+        let h = this.hue;
+        if (pRatio > 0.8) h = 60; 
+
+        fill(h, s, b, this.lifespan);
+        noStroke();
+        let speed = this.vel.mag();
+        let angle = this.vel.heading();
+        translate(this.pos.x, this.pos.y);
+        rotate(angle);
+        let stretch = map(speed, 0, 15, 1, 4);
+        ellipse(0, 0, this.size * stretch, this.size);
+        pop();
+      }
+      isDead() { return this.lifespan < 0; }
+    }
+
+    function createNormalSpark(x, y, count) {
+      for (let i = 0; i < count; i++) {
+        let v = p5.Vector.random2D().mult(random(2, 7));
+        fireworks.push(new Particle(x, y, random(360), v, 0.12, 1.0));
+      }
+    }
+
+    function createHeartExplosion(x, y) {
+      let baseHue = random([345, 355, 5, 330]);
+      for (let t = 0; t < TWO_PI; t += 0.12) {
+        let tx = 16 * pow(sin(t), 3);
+        let ty = -(13 * cos(t) - 5 * cos(2*t) - 2 * cos(3*t) - cos(4*t));
+        let v = createVector(tx, ty).mult(0.6); 
+        fireworks.push(new Particle(x, y, baseHue, v, 0.08, 0.94));
+      }
+    }
+
+    function startMediaPipe() {
+      const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+      hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.4, minTrackingConfidence: 0.4 });
+      hands.onResults(res => { detectedHand = res; });
+      const camera = new Camera(videoElement, {
+        onFrame: async () => { await hands.send({image: videoElement}); },
+        width: 1280, height: 720
+      });
+      camera.start();
+    }
+  </script>
+</body>
+</html>
